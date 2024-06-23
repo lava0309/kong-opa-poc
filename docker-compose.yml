@@ -1,0 +1,89 @@
+version: '3.7'
+
+services:
+  kong:
+    image: kong-with-opav
+    container_name: kong
+    environment:
+      KONG_DATABASE: "off"
+      KONG_PLUGINS: "bundled, opa"
+      KONG_PROXY_ACCESS_LOG: "/dev/stdout"
+      KONG_ADMIN_ACCESS_LOG: "/dev/stdout"
+      KONG_PROXY_ERROR_LOG: "/dev/stderr"
+      KONG_ADMIN_ERROR_LOG: "/dev/stderr"
+      KONG_DECLARATIVE_CONFIG: /usr/local/kong/declarative/kong.yml
+      KONG_ADMIN_LISTEN: "0.0.0.0:8001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://kong:8001"]
+      interval: 5s
+      timeout: 2s
+      retries: 15
+    ports:
+      - "8001:8001"
+      - "8000:8000"
+      - "8443:8443"
+      - "8444:8444"
+    volumes:
+      - ./kong.yml:/usr/local/kong/declarative/kong.yml:ro
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:latest
+    container_name: redis
+    ports:
+      - "6379:6379"
+
+  webdis:
+    image: nicolas/webdis:latest
+    container_name: webdis
+    ports:
+      - "7379:7379"
+    depends_on:
+      - redis
+    volumes:
+      - ./webdis.json:/etc/webdis.json
+
+  opa:
+    image: openpolicyagent/opa:0.64.1-debug
+    container_name: opa
+    ports:
+      - "8181:8181"
+    volumes:
+      - ./policy:/policy
+      - ./config.yaml:/config.yaml
+    command:
+      - "run"
+      - "--server"
+      - "--log-format=json-pretty"
+      - "--log-level=debug"
+      - "--set=decision_logs.console=true"
+      - "--set=services.nginx.url=http://bundle_server"
+      - "--set=bundles.nginx.service=nginx"
+      - "--set=bundles.nginx.resource=bundles/bundle.tar.gz"
+    environment:
+      - OPA_CONFIG_FILE=/config.yaml
+    depends_on:
+    - bundle_server
+
+  api_server:
+    image: openpolicyagent/demo-restful-api:0.3
+    ports:
+    - 5001:5000
+    environment:
+    - OPA_ADDR=http://opa:8181
+    - POLICY_PATH=/v1/data/httpapi/authz
+    depends_on:
+    - opa
+  bundle_server:
+    image: nginx:1.20.0-alpine
+    ports:
+    - 8888:80
+    volumes:
+    - ./bundles:/usr/share/nginx/html/bundles
+
+  http-echo:
+    image: hashicorp/http-echo
+    container_name: http-echo
+    ports:
+      - "8080:5678"

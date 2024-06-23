@@ -1,0 +1,21 @@
+_format_version: "1.1"
+services:
+  - name: http-echo
+    url: http://http-echo:5678
+    routes:
+      - paths:
+          - /echo
+    plugins:
+      - name: opa
+        enabled: true
+        config:
+            server:
+              protocol: http
+              host: opa
+              port: 8181
+              connection:
+                timeout: 180
+                pool: 25
+            policy:
+                base_path: v1/data
+                decision:  httpapi/authz/allow
