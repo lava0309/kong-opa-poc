@@ -78,24 +78,32 @@ function _M.execute(conf)
     end
 
     -- Prepare data for Webdis
-    local data = {
-        application_access = { "module1", "module2" },
-        permissions = { "READ", "WRITE" }
-    }
-
-    -- POST data to Webdis
     local httpc = http.new()
-    local res, err = httpc:request_uri("http://" .. webdis_host .. ":" .. webdis_port .. "/SET/" .. user_id, {
-        method = "POST",
-        body = cjson_safe.encode(data),
+    local response, error = httpc:request_uri("https://dog.ceo/api/breeds/list/all", {
+        method = "GET",
         headers = {
             ["Content-Type"] = "application/json",
         },
     })
 
-    if not res then
+    if not response then
+        kong.log.err("Failed to communicate with Webdis: ", error)
+        return kong.response.exit(500, { message = response.body})
+    end
+
+    -- POST data to Webdis
+    local httpc = http.new()
+    local res, err = httpc:request_uri("http://" .. webdis_host .. ":" .. webdis_port .. "/SET/" .. user_id, {
+        method = "POST",
+        body = cjson_safe.encode(response),
+        headers = {
+            ["Content-Type"] = "application/json",
+        },
+    })
+
+    if res then
         kong.log.err("Failed to communicate with Webdis: ", err)
-        return kong.response.exit(500, { message = "Failed to communicate with Webdis" })
+        return kong.response.exit(500, { message = res.status})
     end
 
     -- get the decision from OPA
